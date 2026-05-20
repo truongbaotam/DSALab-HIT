@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Finance Dashboard</title>
+    <!-- Tailwind CSS để làm giao diện đẹp -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Chart.js để vẽ biểu đồ -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+    <div class="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+        <!-- Header -->
+        <header class="mb-8 flex justify-between items-center bg-white p-6 rounded-2xl shadow-xs">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">Quản Lý Tài Chính Cá Nhân</h1>
+                <p class="text-slate-500 text-sm">Theo dõi thu nhập và chi tiêu của bạn</p>
+            </div>
+            <div class="text-right">
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Số dư hiện tại</span>
+                <p id="total-balance" class="text-2xl font-black text-emerald-600">0đ</p>
+            </div>
+        </header>
+
+        <!-- Thống kê tổng quan -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl flex items-center justify-between">
+                <div>
+                    <p class="text-emerald-600 text-sm font-medium">Tổng Thu Nhập</p>
+                    <p id="total-income" class="text-2xl font-bold text-emerald-700 mt-1">0đ</p>
+                </div>
+                <div class="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl text-xl">💰</div>
+            </div>
+            <div class="bg-rose-50 border border-rose-200 p-6 rounded-2xl flex items-center justify-between">
+                <div>
+                    <p class="text-rose-600 text-sm font-medium">Tổng Chi Tiêu</p>
+                    <p id="total-expense" class="text-2xl font-bold text-rose-700 mt-1">0đ</p>
+                </div>
+                <div class="p-3 bg-rose-500/10 text-rose-600 rounded-xl text-xl">💸</div>
+            </div>
+        </div>
+
+        <!-- Nội dung chính -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Form Nhập & Biểu đồ -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Form -->
+                <div class="bg-white p-6 rounded-2xl shadow-xs">
+                    <h2 class="text-lg font-bold mb-4">Thêm Giao Dịch</h2>
+                    <form id="transaction-form" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 mb-1">Nội dung</label>
+                            <input type="text" id="text" placeholder="Ví dụ: Lương tháng, Ăn trưa..." required class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 mb-1">Số tiền (VNĐ)</label>
+                            <input type="number" id="amount" placeholder="Nhập số tiền..." required class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 mb-1">Loại</label>
+                            <select id="type" class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500">
+                                <option value="income">Thu Nhập (+)</option>
+                                <option value="expense">Chi Tiêu (-)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-slate-900 text-white font-medium py-2.5 rounded-xl hover:bg-slate-800 transition duration-200 cursor-pointer">Thêm giao dịch</button>
+                    </form>
+                </div>
+
+                <!-- Biểu đồ -->
+                <div class="bg-white p-6 rounded-2xl shadow-xs">
+                    <h2 class="text-lg font-bold mb-4">Tỷ Lệ Thu Chi</h2>
+                    <div class="relative max-w-[200px] mx-auto">
+                        <canvas id="financeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lịch sử giao dịch -->
+            <div class="lg:col-span-2">
+                <div class="bg-white p-6 rounded-2xl shadow-xs h-full flex flex-col">
+                    <h2 class="text-lg font-bold mb-4">Lịch Sử Giao Dịch</h2>
+                    <ul id="transaction-list" class="space-y-3 flex-1 overflow-y-auto max-h-[500px] pr-2">
+                        <!-- Giao dịch sẽ tự động render vào đây bằng JS -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- XỬ LÝ LOGIC JAVASCRIPT -->
+    <script>
+        // DOM Elements
+        const balanceEl = document.getElementById('total-balance');
+        const incomeEl = document.getElementById('total-income');
+        const expenseEl = document.getElementById('total-expense');
+        const listEl = document.getElementById('transaction-list');
+        const formEl = document.getElementById('transaction-form');
+        const textInput = document.getElementById('text');
+        const amountInput = document.getElementById('amount');
+        const typeInput = document.getElementById('type');
+
+        // Lấy dữ liệu từ LocalStorage hoặc mảng rỗng nếu chưa có
+        let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+        let financeChart;
+
+        // Hàm định dạng tiền tệ VNĐ
+        function formatMoney(num) {
+            return num.toLocaleString('vi-VN') + 'đ';
+        }
+
+        // Cập nhật biểu đồ Chart.js
+        function updateChart(income, expense) {
+            const ctx = document.getElementById('financeChart').getContext('2d');
+            
+            if (financeChart) {
+                financeChart.destroy(); // Xóa biểu đồ cũ để vẽ lại cái mới
+            }
+
+            if (income === 0 && expense === 0) {
+                // Nếu chưa có tiền, vẽ biểu đồ rỗng màu xám
+                financeChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Chưa có dữ liệu'],
+                        datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }]
+                    },
+                    options: { plugins: { legend: { display: false } } }
+                });
+                return;
+            }
+
+            financeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Thu Nhập', 'Chi Tiêu'],
+                    datasets: [{
+                        data: [income, expense],
+                        backgroundColor: ['#10b981', '#f43f5e'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
+                }
+            });
+        }
+
+        // Tính toán tổng số dư, thu, chi và cập nhật UI
+        function updateValues() {
+            const amounts = transactions.map(t => t.type === 'income' ? t.amount : -t.amount);
+            
+            const total = amounts.reduce((acc, item) => (acc += item), 0);
+            const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+            const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+
+            balanceEl.innerText = formatMoney(total);
+            incomeEl.innerText = formatMoney(income);
+            expenseEl.innerText = formatMoney(expense);
+
+            // Đổi màu số dư nếu bị âm tiền
+            if(total < 0) {
+                balanceEl.className = "text-2xl font-black text-rose-600";
+            } else {
+                balanceEl.className = "text-2xl font-black text-emerald-600";
+            }
+
+            updateChart(income, expense);
+        }
+
+        // Thêm giao dịch vào danh sách hiển thị
+        function addTransactionDOM(transaction) {
+            const li = document.createElement('li');
+            const isIncome = transaction.type === 'income';
+            
+            li.className = `flex justify-between items-center p-4 rounded-xl border ${isIncome ? 'bg-emerald-50/30 border-emerald-100' : 'bg-rose-50/30 border-rose-100'} transition duration-200 group`;
+
+            li.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <span class="text-xl">${isIncome ? '➕' : '➖'}</span>
+                    <div>
+                        <p class="font-semibold text-slate-800">${transaction.text}</p>
+                        <p class="text-xs text-slate-400">${transaction.date}</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="font-bold ${isIncome ? 'text-emerald-600' : 'text-rose-600'}">
+                        ${isIncome ? '+' : '-'}${formatMoney(transaction.amount)}
+                    </span>
+                    <button onclick="removeTransaction(${transaction.id})" class="text-slate-400 hover:text-rose-600 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        ❌
+                    </button>
+                </div>
+            `;
+
+            listEl.appendChild(li);
+        }
+
+        // Xóa giao dịch theo ID
+        function removeTransaction(id) {
+            transactions = transactions.filter(t => t.id !== id);
+            updateLocalStorage();
+            init();
+        }
+
+        // Cập nhật LocalStorage
+        function updateLocalStorage() {
+            localStorage.setItem('transactions', JSON.stringify(transactions));
+        }
+
+        // Xử lý sự kiện submit form
+        formEl.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const transaction = {
+                id: Date.now(),
+                text: textInput.value,
+                amount: Math.abs(Number(amountInput.value)),
+                type: typeInput.value,
+                date: new Date().toLocaleDateString('vi-VN')
+            };
+
+            transactions.push(transaction);
+            addTransactionDOM(transaction);
+            updateValues();
+            updateLocalStorage();
+
+            // Reset form
+            textInput.value = '';
+            amountInput.value = '';
+        });
+
+        // Khởi tạo ứng dụng
+        function init() {
+            listEl.innerHTML = '';
+            transactions.forEach(addTransactionDOM);
+            updateValues();
+        }
+
+        init();
+    </script>
+</body>
+</html>
